@@ -1,7 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { parseCookies, setCookie } from "nookies";
+import { signOut } from "../contexts/AuthContext";
 
-const cookies = parseCookies();
+let cookies = parseCookies();
 let isRefreshing = false;
 let failedRequestsQueue = [];
 
@@ -19,7 +20,8 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response.status === 401) {
       if (error.response.data?.code === "token.expired") {
-        // renovar token
+        //renovar token
+        cookies = parseCookies();
 
         const { "nextauth.refreshToken": refreshToken } = cookies;
         const originalConfig = error.config;
@@ -29,9 +31,10 @@ api.interceptors.response.use(
 
           api
             .post("/refresh", {
-              refreshToken,
+              refreshToken: refreshToken,
             })
             .then((response) => {
+              console.log(response);
               const { token } = response.data;
 
               setCookie(undefined, "nextauth.token", token, {
@@ -48,15 +51,17 @@ api.interceptors.response.use(
                 }
               );
 
-              api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+              api.defaults.headers["Authorization"] = `Bearer ${token}`;
 
               failedRequestsQueue.forEach((request) =>
                 request.onSuccess(token)
               );
               failedRequestsQueue = [];
             })
-            .catch((err) => {
-              failedRequestsQueue.forEach((request) => request.onFailure(err));
+            .catch((error) => {
+              failedRequestsQueue.forEach((request) =>
+                request.onFailure(error)
+              );
               failedRequestsQueue = [];
             })
             .finally(() => {
@@ -68,16 +73,19 @@ api.interceptors.response.use(
           failedRequestsQueue.push({
             onSuccess: (token: string) => {
               originalConfig.headers["Authorization"] = `Bearer ${token}`;
+
               resolve(api(originalConfig));
             },
-            onFailure: (err: AxiosError) => {
-              reject(err);
+            onFailure: (error: AxiosError) => {
+              reject(error);
             },
           });
         });
       } else {
-        // deslogar usuário
+        //deslogar usuario
+        signOut();
       }
     }
+    return Promise.reject(error);
   }
 );
